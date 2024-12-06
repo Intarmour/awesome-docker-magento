@@ -1,0 +1,121 @@
+services:
+  nginx:
+    image: nginx:1.18
+    container_name: magento2_nginx
+    volumes:
+      - ./src/nginx/conf:/etc/nginx/conf.d
+      - ./src/nginx/ssl:/etc/nginx/ssl
+      - ./src/html:/var/www/html
+    networks:
+      - magento_network
+    depends_on:
+      - php
+    ports:
+      - "80:80"
+      - "443:443"
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: magento2_php
+    volumes:
+      - ./src/html:/var/www/html
+      - ./src/php/conf:/usr/local/etc/php/conf.d
+      - ./src/composer:/composer
+    networks:
+      - magento_network
+    environment:
+      COMPOSER_ALLOW_SUPERUSER: 1
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.0
+    container_name: magento2_mysql
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - magento_network
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: magento
+      MYSQL_USER: magento
+      MYSQL_PASSWORD: magento_password
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: magento2_redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - magento_network 
+
+  varnish:
+    image: varnish:latest
+    container_name: magento2_varnish
+    volumes:
+      - ./src/varnish/conf:/etc/varnish
+    networks:
+      - magento_network
+    depends_on:
+      - php
+      - nginx
+    ports:
+      - "6081:6081"
+      - "6082:6082"
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    container_name: magento2_mailcatcher
+    networks:
+      - magento_network
+    ports:
+      - "1025:1025"
+      - "1080:1080"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: magento2_rabbitmq
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - magento_network
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: Dockerfile_elastic
+    environment:
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - node.name=node-1
+      - cluster.initial_master_nodes=node-1
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./src/elasticsearchdata:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - magento_network 
+
+networks:
+  magento_network:
+    name: Magento2Prod
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  varnish_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
